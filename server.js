@@ -1,4 +1,3 @@
-require('dotenv').config();
 const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
@@ -54,11 +53,11 @@ function parseCodeToText(code, lang) {
 // ================= 🧠 专属 AI 管家 =================
 const chatHistory = [];
 async function getAIResponse(prompt) {
-    // 安全读取环境变量，无硬编码！
+    // 直接读取 Render 的环境变量
     const groqKey = process.env.GROQ_API_KEY; 
     
     if (!groqKey) {
-        return "[Simulated AI] 哎呀，还没配置 API Key。请在本地创建 .env 或在 Render 配置 GROQ_API_KEY。🐬";
+        return "[Simulated AI] 哎呀，还没配置 API Key。请在 Render 配置 GROQ_API_KEY。🐬";
     }
 
     try {
@@ -172,7 +171,6 @@ wss.on('connection', (ws) => {
                     parsedText = censorText(parsedText);
                     ws.userData.credits += 2;
 
-                    // AI 呼叫拦截
                     if (parsedText.startsWith('/ai ') || parsedText.startsWith('@DeepSeek ')) {
                         const prompt = parsedText.replace(/^(\/ai |@DeepSeek )/, '');
                         broadcastToAll(ws, data, parsedText, true);
@@ -190,11 +188,9 @@ wss.on('connection', (ws) => {
                         return;
                     }
 
-                    // 普通聊天存入记忆
                     chatHistory.push({ role: "user", content: `[${ws.userData.config.nickname}]: ${parsedText}` });
                     if (chatHistory.length > 10) chatHistory.splice(0, 2);
 
-                    // 系统指令
                     if (data.text.includes('/top')) {
                         const sortedUsers = Array.from(clients.values()).filter(u => u.config).sort((a, b) => b.credits - a.credits).slice(0, 5);
                         let lbText = "=== 🏆 极客积分排行榜 ===\n";
@@ -213,7 +209,6 @@ wss.on('connection', (ws) => {
                         return;
                     }
 
-                    // Shout Out 检测
                     const mentionRegex = /@(\w+)/g;
                     let mentionMatch;
                     const mentionedUsers = [];
