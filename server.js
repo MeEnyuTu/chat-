@@ -3,35 +3,13 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-// Render 会自动分配端口
 const PORT = process.env.PORT || 8080;
 
-// ------------------ 脏话过滤模块 (新增) ------------------
-// 这里可以随时添加你不想看到的词
-const badWords = [
-    'fuck', 'shit', 'bitch', 'cunt', 'asshole', 'bastard', 'dick', 'pussy', 
-    '傻逼', 'sb', '操', '草泥马', '尼玛', '妈的', '狗日', '混蛋', '滚蛋'
-];
-
-function censorText(text) {
-    let censored = text;
-    badWords.forEach(word => {
-        // 使用正则全局替换，忽略大小写 (gi)
-        // 使用 'i' 可以匹配 Fuck、FUCK 等变体
-        const regex = new RegExp(word, 'gi');
-        // 替换为等长的星号，例如 fuck -> ****
-        censored = censored.replace(regex, '*'.repeat(word.length));
-    });
-    return censored;
-}
-// ----------------------------------------------------------
-
-// 翻译字典 (简单版)
+// ================= 翻译与过滤模块 =================
 const dictionary = {
-    "zh-en": { "你好": "Hello", "你好世界": "Hello World" },
-    "en-zh": { "hello": "你好", "hello world": "你好世界" }
+    "zh-en": { "你好": "Hello", "你好世界": "Hello World", "牛逼": "awesome" },
+    "en-zh": { "hello": "你好", "hello world": "你好世界", "awesome": "牛逼" }
 };
-
 function simpleTranslate(text, fromLang, toLang) {
     if (fromLang === toLang) return text;
     const dict = dictionary[`${fromLang}-${toLang}`];
@@ -39,12 +17,21 @@ function simpleTranslate(text, fromLang, toLang) {
     return text + ` [Original ${fromLang.toUpperCase()}]`;
 }
 
-// 代码解析
+const badWords = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', '傻逼', 'sb', '操', '草泥马', '妈的'];
+function censorText(text) {
+    let censored = text;
+    badWords.forEach(word => {
+        const regex = new RegExp(word, 'gi');
+        censored = censored.replace(regex, '*'.repeat(word.length));
+    });
+    return censored;
+}
+
+// ================= 代码解析模块 =================
 function parseCodeToText(code, lang) {
     let match;
     code = code.trim();
     if (code.length > 500) return "Code too long!";
-    
     try {
         switch (lang) {
             case 'python': match = code.match(/print\s*\(\s*['"](.*?)['"]\s*\)/s); break;
@@ -56,9 +43,9 @@ function parseCodeToText(code, lang) {
     return (match && match[1]) ? match[1] : null;
 }
 
-const clients = new Map();
+// ================= 服务器与 WebSocket =================
+const clients = new Map(); // ws -> { config, credits, lastMessageTime }
 
-// 静态文件服务
 const server = http.createServer((req, res) => {
     if (req.url === '/' || req.url === '/index.html') {
         fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
@@ -74,8 +61,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
-    ws.userConfig = null;
-    ws.lastMessageTime = 0;
+    ws.userData = { config: null, credits: 0, lastMessageTime: 0 };
 
     ws.on('message', (message) => {
         if (message.length > 2000) return;
@@ -83,46 +69,123 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
 
+            // 初始化用户
             if (data.type === 'init') {
-                ws.userConfig = data.userConfig;
-                clients.set(ws, data.userConfig);
+                ws.userData.config = data.userConfig;
+                clients.set(ws, ws.userData);
                 return;
             }
 
-            if (data.type === 'code' && ws.userConfig) {
-                // 限流 (1秒1条)
+            // 处理聊天代码
+            if (data.type === 'code' && ws.userData.config) {
                 const now = Date.now();
-                if (now - ws.lastMessageTime < 1000) {
+                if (now - ws.userData.lastMessageTime < 1000) {
                     ws.send(JSON.stringify({ type: 'error', text: "发送太快啦！请稍后再试。" }));
                     return;
                 }
-                ws.lastMessageTime = now;
+                ws.userData.lastMessageTime = now;
 
-                let parsedText = parseCodeToText(data.text, ws.userConfig.codeLang);
+                let parsedText = parseCodeToText(data.text, ws.userData.config.codeLang);
                 
                 if (parsedText) {
-                    // ==========================================
-                    // 重点：在这里调用脏话过滤函数！
-                    // 先过滤原始提取的文本，再去翻译
-                    // ==========================================
+                    // 1. 脏话过滤
                     parsedText = censorText(parsedText);
+                    
+                    // 2. 积分增加
+                    ws.userData.credits += 2;
 
-                    clients.forEach((receiverConfig, receiverWs) => {
-                        if (receiverWs.readyState === WebSocket.OPEN) {
-                            // XSS 防护
+                    // 3. 处理系统指令
+                    if (data.text.includes('/top')) {
+                        const sortedUsers = Array.from(clients.values())
+                            .filter(u => u.config)
+                            .sort((a, b) => b.credits - a.credits)
+                            .slice(0, 5);
+                        
+                        let lbText = "=== 🏆 极客积分排行榜 ===\n";
+                        sortedUsers.forEach((u, index) => {
+                            lbText += `${index + 1}. ${u.config.nickname}: ${u.credits} 分\n`;
+                        });
+                        
+                        ws.send(JSON.stringify({
+                            type: 'chat', user: "SYSTEM", originalCode: data.text,
+                            originalText: lbText, time: data.time
+                        }));
+                        return;
+                    }
+
+                    if (data.text.includes('/credits')) {
+                        const creditsText = "=== 💻 CodeChat Credits ===\n" +
+                            "👑 Creator: EnyuTu\n" +
+                            "🤖 Debug Helper: DeepSeek AI\n" +
+                            "⚙️ Stack: Node.js + WebSockets\n" +
+                            "---------------------------\n" +
+                            "Shout out to all the geeks! :)";
+                        ws.send(JSON.stringify({
+                            type: 'chat', user: "SYSTEM", originalCode: data.text,
+                            originalText: creditsText, time: data.time
+                        }));
+                        return;
+                    }
+
+                    if (data.text.includes('/flipper')) {
+                        const flipperArt = 
+"_.-------.._                    -,\n" +
+"  .-\"```\"--..,,_/ /`-,               -,  \\ \n" +
+".:\"          /:/  /'\\  \\     ,_...,  `. |  |\n" +
+"/       ,----/:/  /`\\ _\\~`_-\"`     _;\n" +
+"'      / /`\"\"\"'\\ \\ \\.~`_-'      ,-\"'/ \n" +
+"|      | |  0    | | .-'      ,/`  /\n" +
+"|    ,..\\ \\     ,.-\"`       ,/`    /\n" +
+";    :    `/`\"\"\\`           ,/--==,/-----,\n" +
+"|    `-...|        -.___-Z:_______J...---;\n" +
+":         `                           _-'\n" +
+"_L_  _     ___  ___  ___  ___  ____--\"`___  _     ___";
+                        ws.send(JSON.stringify({
+                            type: 'chat', user: "FLIPPER", originalCode: data.text,
+                            originalText: flipperArt, time: data.time
+                        }));
+                        return;
+                    }
+
+                    // 4. Shout Out 检测 (@用户名)
+                    const mentionRegex = /@(\w+)/g;
+                    let mentionMatch;
+                    const mentionedUsers = [];
+                    while ((mentionMatch = mentionRegex.exec(parsedText)) !== null) {
+                        mentionedUsers.push(mentionMatch[1]);
+                    }
+
+                    if (mentionedUsers.length > 0) {
+                        clients.forEach((receiverData, receiverWs) => {
+                            if (receiverWs.readyState === WebSocket.OPEN && 
+                                receiverData.config &&
+                                mentionedUsers.includes(receiverData.config.nickname)) {
+                                receiverWs.send(JSON.stringify({
+                                    type: 'shoutout_alert',
+                                    from: ws.userData.config.nickname,
+                                    text: parsedText
+                                }));
+                            }
+                        });
+                    }
+
+                    // 5. 广播消息给所有人
+                    clients.forEach((receiverData, receiverWs) => {
+                        if (receiverWs.readyState === WebSocket.OPEN && receiverData.config) {
                             const safeCode = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                             const safeText = parsedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
+                            
                             const translatedText = simpleTranslate(
                                 safeText, 
-                                ws.userConfig.nativeLang, 
-                                receiverConfig.nativeLang
+                                ws.userData.config.nativeLang, 
+                                receiverData.config.nativeLang
                             );
 
                             receiverWs.send(JSON.stringify({
                                 type: 'chat',
-                                user: ws.userConfig.nickname,
-                                codeLang: ws.userConfig.codeLang,
+                                user: ws.userData.config.nickname,
+                                userCredits: ws.userData.credits,
+                                codeLang: ws.userData.config.codeLang,
                                 originalCode: safeCode,
                                 originalText: safeText,
                                 translatedText: translatedText,
@@ -133,11 +196,11 @@ wss.on('connection', (ws) => {
                 } else {
                     ws.send(JSON.stringify({
                         type: 'error',
-                        text: `[Parse Error] 无法解析您的 ${ws.userConfig.codeLang.toUpperCase()} 代码。`
+                        text: `[Parse Error] 无法解析您的 ${ws.userData.config.codeLang.toUpperCase()} 代码。请使用正确的打印语法。`
                     }));
                 }
             }
-        } catch (err) {}
+        } catch (err) { }
     });
 
     ws.on('close', () => {
