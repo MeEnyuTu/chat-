@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Hybrid UDP/WS Code Chat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+            background-color: #0c0c0c;
+            color: #cccccc;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 终端容器 */
+        #terminal-container {
+            width: 100%; max-width: 1000px; height: 90vh;
+            background-color: #0c0c0c;
+            display: flex; flex-direction: column;
+            border: 1px solid #333; border-radius: 4px;
+            overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+
+        /* 顶部 Tab 栏 */
+        #terminal-header {
+            background-color: #1f1f1f; padding: 8px 16px;
+            display: flex; align-items: center;
+            border-bottom: 1px solid #333;
+            font-size: 12px; color: #999;
+        }
+        .tab {
+            background-color: #0c0c0c; padding: 6px 20px;
+            border-radius: 4px; border-top: 1px solid #333;
+            display: flex; gap: 8px;
+        }
+        .tab-icon { color: #3b8eea; font-weight: bold; }
+
+        /* 聊天记录区 */
+        #chat-history {
+            flex: 1; padding: 16px; overflow-y: auto;
+            line-height: 1.6; white-space: pre-wrap; 
+        }
+
+        /* 消息排版 */
+        .message-block { margin-bottom: 16px; }
+        .meta { color: #767676; font-size: 12px; margin-bottom: 4px; }
+        .meta .user { color: #16c60c; font-weight: bold; }
+        .meta .user.python-user { color: #d7ba7d; } /* Python 用户用黄色区分 */
+        .meta .lang { color: #ce9178; margin-left: 8px; font-style: italic;}
+        
+        /* 代码块样式 (针对网页用户) */
+        .source-code {
+            background-color: #1e1e1e;
+            padding: 8px 12px; border-radius: 4px;
+            color: #d4d4d4; font-size: 13px;
+            border-left: 3px solid #0e639c;
+            margin-bottom: 6px;
+        }
+        
+        /* 聊天文本输出 */
+        .chat-output {
+            color: #f9f1a5; font-size: 15px;
+            padding-left: 12px;
+        }
+        .chat-output::before { content: "↳ "; color: #569cd6; }
+
+        /* 系统提示 */
+        .system-msg { color: #4ec9b0; margin-bottom: 10px; font-size: 13px; }
+
+        /* 底部输入区 */
+        #input-area {
+            padding: 12px 16px; background-color: #1e1e1e;
+            border-top: 1px solid #333;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .input-tools {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px; color: #888;
+        }
+        #lang-badge {
+            background: #333; padding: 2px 8px; border-radius: 4px;
+            color: #4ec9b0; font-weight: bold;
+        }
+        .input-line { display: flex; align-items: center; }
+        .prompt { color: #16c60c; margin-right: 8px; }
+        .prompt::before { content: ">>> "; color: #3b8eea; }
+
+        #message-input {
+            flex: 1; background: transparent; border: none;
+            color: #d4d4d4; font-family: inherit; font-size: 14px;
+            outline: none; caret-color: #fff;
+        }
+
+        #chat-history::-webkit-scrollbar { width: 12px; }
+        #chat-history::-webkit-scrollbar-track { background: #0c0c0c; }
+        #chat-history::-webkit-scrollbar-thumb { background: #333; border: 3px solid #0c0c0c; border-radius: 6px; }
+    </style>
+</head>
+<body>
+
+    <div id="terminal-container">
+        <div id="terminal-header">
+            <div class="tab"><span class="tab-icon">{ }</span> Hybrid Chat (UDP + WebSocket)</div>
+        </div>
+
+        <div id="chat-history">
+            <div class="system-msg">System: 已连接。你可以用代码说话，也可以接收来自 Python 终端的 UDP 广播。</div>
+        </div>
+
+        <div id="input-area">
+            <div class="input-tools">
+                <div>Language: <span id="lang-badge">Python</span></div>
+                <div style="color: #555; font-size: 11px;">Press Shift+Tab to switch</div>
+            </div>
+            <div class="input-line">
+                <div class="prompt"></div>
+                <input type="text" id="message-input" placeholder='print("hello world")' autocomplete="off" autofocus>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatHistory = document.getElementById('chat-history');
+        const messageInput = document.getElementById('message-input');
+        const langBadge = document.getElementById('lang-badge');
+        
+        // 网页端的随机昵称
+        const myName = "WebDev_" + Math.floor(Math.random() * 1000); 
+        
+        const langs = ['python', 'cpp', 'java', 'js'];
+        let currentLangIndex = 0;
+
+        const placeholders = {
+            python: 'print("hello world")',
+            cpp: 'cout << "hello world" << endl;',
+            java: 'System.out.println("hello world");',
+            js: 'console.log("hello world");'
+        };
+
+        // 连接本地 Node.js 的 WebSocket 端口
+        const ws = new WebSocket('ws://localhost:8080');
+
+        ws.onopen = () => {
+            appendSystem(`You are connected as ${myName}. Waiting for messages...`);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'chat') {
+                    appendChat(data);
+                }
+            } catch (e) {
+                console.error("消息解析失败", e);
+            }
+        };
+
+        // 渲染消息
+        function appendChat(data) {
+            const block = document.createElement('div');
+            block.className = 'message-block';
+            
+            // 判断消息来源：是网页端发的（有代码），还是 Python 终端发的（纯文本）
+            const isPythonClient = data.user === "Python终端" || data.user === "Python终端 (UDP)";
+            const userClass = isPythonClient ? 'user python-user' : 'user';
+            const langDisplay = data.codeLang ? data.codeLang.toUpperCase() : 'UDP';
+
+            let codeHtml = '';
+            if (data.originalCode) {
+                codeHtml = `<div class="source-code">${escapeHtml(data.originalCode)}</div>`;
+            }
+
+            // 如果是 Python 发来的，data.text 就是内容；如果是网页端，data.originalText 或 data.text
+            const displayText = data.text || data.originalText;
+
+            block.innerHTML = `
+                <div class="meta">
+                    [${getTime()}] <span class="${userClass}">${data.user}</span> 
+                    <span class="lang">${langDisplay}</span>
+                </div>
+                ${codeHtml}
+                <div class="chat-output">${escapeHtml(displayText)}</div>
+            `;
+            chatHistory.appendChild(block);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function appendSystem(msg) {
+            const block = document.createElement('div');
+            block.className = 'system-msg';
+            block.innerText = "System: " + msg;
+            chatHistory.appendChild(block);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function getTime() {
+            return new Date().toTimeString().split(' ')[0];
+        }
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return "";
+            return unsafe
+                 .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        // Shift+Tab 切换语言
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab' && e.shiftKey) {
+                e.preventDefault();
+                currentLangIndex = (currentLangIndex + 1) % langs.length;
+                const newLang = langs[currentLangIndex];
+                langBadge.innerText = newLang === 'cpp' ? 'C++' : newLang.charAt(0).toUpperCase() + newLang.slice(1);
+                messageInput.placeholder = placeholders[newLang];
+                messageInput.focus();
+            }
+        });
+
+        // 回车发送
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const text = messageInput.value;
+                if (!text.trim() || ws.readyState !== WebSocket.OPEN) return;
+
+                const currentLang = langs[currentLangIndex];
+                const time = getTime();
+
+                // 本地先回显自己的消息
+                appendChat({
+                    user: myName,
+                    text: text, 
+                    originalText: text,
+                    originalCode: text,
+                    codeLang: currentLang
+                });
+
+                // 发送给服务器（服务器会提取文本并通过 UDP 广播给 Python）
+                ws.send(JSON.stringify({ 
+                    type: 'code',
+                    user: myName,
+                    text: text, 
+                    time: time,
+                    lang: currentLang
+                }));
+                
+                messageInput.value = '';
+            }
+        });
+    </script>
+</body>
+</html>
