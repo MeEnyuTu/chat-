@@ -1,52 +1,150 @@
-const dgram = require('dgram'); // 你的 UDP 框架
 const WebSocket = require('ws');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
-// 你的端口定义
-const UDP_PORT = 5005;
-const WS_PORT = 8080;
+// Render 会自动分配端口
+const PORT = process.env.PORT || 8080;
 
-// 1. 复刻你的 Python 代码创建 UDP Socket
-const udpSocket = dgram.createSocket('udp4');
-const wss = new WebSocket.Server({ port: WS_PORT });
+// ------------------ 脏话过滤模块 (新增) ------------------
+// 这里可以随时添加你不想看到的词
+const badWords = [
+    'fuck', 'shit', 'bitch', 'cunt', 'asshole', 'bastard', 'dick', 'pussy', 
+    '傻逼', 'sb', '操', '草泥马', '尼玛', '妈的', '狗日', '混蛋', '滚蛋'
+];
 
-// 2. 接收你 Python 脚本发来的广播
-udpSocket.on('message', (msg, rinfo) => {
-    const text = msg.toString('utf-8');
-    console.log(`[UDP 收到] 来自 ${rinfo.address}: ${text}`);
+function censorText(text) {
+    let censored = text;
+    badWords.forEach(word => {
+        // 使用正则全局替换，忽略大小写 (gi)
+        // 使用 'i' 可以匹配 Fuck、FUCK 等变体
+        const regex = new RegExp(word, 'gi');
+        // 替换为等长的星号，例如 fuck -> ****
+        censored = censored.replace(regex, '*'.repeat(word.length));
+    });
+    return censored;
+}
+// ----------------------------------------------------------
+
+// 翻译字典 (简单版)
+const dictionary = {
+    "zh-en": { "你好": "Hello", "你好世界": "Hello World" },
+    "en-zh": { "hello": "你好", "hello world": "你好世界" }
+};
+
+function simpleTranslate(text, fromLang, toLang) {
+    if (fromLang === toLang) return text;
+    const dict = dictionary[`${fromLang}-${toLang}`];
+    if (dict && dict[text.toLowerCase()]) return dict[text.toLowerCase()];
+    return text + ` [Original ${fromLang.toUpperCase()}]`;
+}
+
+// 代码解析
+function parseCodeToText(code, lang) {
+    let match;
+    code = code.trim();
+    if (code.length > 500) return "Code too long!";
     
-    // 转发给网页（WebSocket）
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ user: "Python终端", text: text, type: 'chat' }));
+    try {
+        switch (lang) {
+            case 'python': match = code.match(/print\s*\(\s*['"](.*?)['"]\s*\)/s); break;
+            case 'cpp': match = code.match(/cout\s*<<\s*['"](.*?)['"]/s); break;
+            case 'java': match = code.match(/System\.out\.print(?:ln)?\s*\(\s*['"](.*?)['"]\s*\)/s); break;
+            case 'js': match = code.match(/console\.log\s*\(\s*['"](.*?)['"]\s*\)/s); break;
         }
-    });
+    } catch (e) { return null; }
+    return (match && match[1]) ? match[1] : null;
+}
+
+const clients = new Map();
+
+// 静态文件服务
+const server = http.createServer((req, res) => {
+    if (req.url === '/' || req.url === '/index.html') {
+        fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
+            if (err) { res.writeHead(500); res.end('Error loading HTML'); return; }
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(data);
+        });
+    } else {
+        res.writeHead(404); res.end();
+    }
 });
 
-// 3. 绑定 5005 端口 (对应你的 BROADCAST_PORT)
-udpSocket.bind(UDP_PORT, () => {
-    udpSocket.setBroadcast(true); // 对应你的 sock.setsockopt
-    console.log(`[UDP 框架] 正在监听端口 ${UDP_PORT}`);
-});
+const wss = new WebSocket.Server({ server });
 
-// 4. 网页发来的消息，通过你的 UDP 框架广播出去
 wss.on('connection', (ws) => {
+    ws.userConfig = null;
+    ws.lastMessageTime = 0;
+
     ws.on('message', (message) => {
-        const data = JSON.parse(message);
-        
-        if (data.type === 'code') {
-            // 简单提取一下代码里的文本
-            let text = "未知消息";
-            const match = data.text.match(/['"](.*?)['"]/); // 简单正则提取
-            if (match && match[1]) text = match[1];
+        if (message.length > 2000) return;
 
-            // 构建你的 Python 脚本能收到的裸文本
-            const fullMsg = `[${data.user}] ${text}`;
-            const buffer = Buffer.from(fullMsg);
+        try {
+            const data = JSON.parse(message);
 
-            // 对应你的 sock.sendto(..., ('255.255.255.255', 5005))
-            udpSocket.send(buffer, 0, buffer.length, UDP_PORT, '255.255.255.255', (err) => {
-                if (err) console.error(err);
-            });
-        }
+            if (data.type === 'init') {
+                ws.userConfig = data.userConfig;
+                clients.set(ws, data.userConfig);
+                return;
+            }
+
+            if (data.type === 'code' && ws.userConfig) {
+                // 限流 (1秒1条)
+                const now = Date.now();
+                if (now - ws.lastMessageTime < 1000) {
+                    ws.send(JSON.stringify({ type: 'error', text: "发送太快啦！请稍后再试。" }));
+                    return;
+                }
+                ws.lastMessageTime = now;
+
+                let parsedText = parseCodeToText(data.text, ws.userConfig.codeLang);
+                
+                if (parsedText) {
+                    // ==========================================
+                    // 重点：在这里调用脏话过滤函数！
+                    // 先过滤原始提取的文本，再去翻译
+                    // ==========================================
+                    parsedText = censorText(parsedText);
+
+                    clients.forEach((receiverConfig, receiverWs) => {
+                        if (receiverWs.readyState === WebSocket.OPEN) {
+                            // XSS 防护
+                            const safeCode = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                            const safeText = parsedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+                            const translatedText = simpleTranslate(
+                                safeText, 
+                                ws.userConfig.nativeLang, 
+                                receiverConfig.nativeLang
+                            );
+
+                            receiverWs.send(JSON.stringify({
+                                type: 'chat',
+                                user: ws.userConfig.nickname,
+                                codeLang: ws.userConfig.codeLang,
+                                originalCode: safeCode,
+                                originalText: safeText,
+                                translatedText: translatedText,
+                                time: data.time
+                            }));
+                        }
+                    });
+                } else {
+                    ws.send(JSON.stringify({
+                        type: 'error',
+                        text: `[Parse Error] 无法解析您的 ${ws.userConfig.codeLang.toUpperCase()} 代码。`
+                    }));
+                }
+            }
+        } catch (err) {}
     });
+
+    ws.on('close', () => {
+        clients.delete(ws);
+    });
+});
+
+server.listen(PORT, () => {
+    console.log(`[Cloud Server] Listening on port ${PORT}`);
 });
