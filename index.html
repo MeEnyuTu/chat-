@@ -2,98 +2,135 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Hybrid UDP/WS Code Chat</title>
+    <title>CodeChat - EnyuTu's Repl</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-            background-color: #0c0c0c;
-            color: #cccccc;
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background-color: #0c0c0c; color: #cccccc;
+            height: 100vh; display: flex; justify-content: center; align-items: center;
         }
+
+        /* 初始化界面 */
+        #setup-screen {
+            background-color: #1e1e1e; padding: 40px; border-radius: 8px;
+            border: 1px solid #333; width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; gap: 20px;
+        }
+        #setup-screen h2 { color: #4ec9b0; text-align: center; font-weight: normal; }
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .form-group label { font-size: 13px; color: #999; }
+        .form-group input, .form-group select {
+            background-color: #0c0c0c; color: #d4d4d4; border: 1px solid #3c3c3c;
+            padding: 10px; font-family: inherit; border-radius: 4px; outline: none;
+        }
+        #start-btn {
+            background-color: #0e639c; color: #fff; border: none; padding: 12px;
+            font-family: inherit; font-weight: bold; cursor: pointer;
+            border-radius: 4px; margin-top: 10px;
+        }
+        #start-btn:hover { background-color: #1177bb; }
 
         /* 终端容器 */
         #terminal-container {
-            width: 100%; max-width: 1000px; height: 90vh;
-            background-color: #0c0c0c;
-            display: flex; flex-direction: column;
-            border: 1px solid #333; border-radius: 4px;
-            overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            width: 100%; max-width: 1000px; height: 90vh; background-color: #0c0c0c;
+            display: none; flex-direction: column; border: 1px solid #333;
+            border-radius: 4px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
         }
-
-        /* 顶部 Tab 栏 */
         #terminal-header {
-            background-color: #1f1f1f; padding: 8px 16px;
-            display: flex; align-items: center;
-            border-bottom: 1px solid #333;
-            font-size: 12px; color: #999;
+            background-color: #1f1f1f; padding: 8px 16px; display: flex; align-items: center;
+            border-bottom: 1px solid #333; font-size: 12px; color: #999;
         }
         .tab {
-            background-color: #0c0c0c; padding: 6px 20px;
-            border-radius: 4px; border-top: 1px solid #333;
-            display: flex; gap: 8px;
+            background-color: #0c0c0c; padding: 6px 20px; border-radius: 4px;
+            border-top: 1px solid #333; display: flex; align-items: center; gap: 8px;
+        }
+        .avatar-header {
+            width: 24px; height: 24px; border-radius: 50%;
+            border: 1px solid #4ec9b0; object-fit: cover;
         }
         .tab-icon { color: #3b8eea; font-weight: bold; }
 
         /* 聊天记录区 */
         #chat-history {
-            flex: 1; padding: 16px; overflow-y: auto;
-            line-height: 1.6; white-space: pre-wrap; 
+            flex: 1; padding: 16px; overflow-y: auto; line-height: 1.6; white-space: pre-wrap;
         }
-
-        /* 消息排版 */
         .message-block { margin-bottom: 16px; }
-        .meta { color: #767676; font-size: 12px; margin-bottom: 4px; }
-        .meta .user { color: #16c60c; font-weight: bold; }
-        .meta .user.python-user { color: #d7ba7d; } /* Python 用户用黄色区分 */
-        .meta .lang { color: #ce9178; margin-left: 8px; font-style: italic;}
-        
-        /* 代码块样式 (针对网页用户) */
-        .source-code {
-            background-color: #1e1e1e;
-            padding: 8px 12px; border-radius: 4px;
-            color: #d4d4d4; font-size: 13px;
-            border-left: 3px solid #0e639c;
-            margin-bottom: 6px;
-        }
-        
-        /* 聊天文本输出 */
-        .chat-output {
-            color: #f9f1a5; font-size: 15px;
-            padding-left: 12px;
-        }
-        .chat-output::before { content: "↳ "; color: #569cd6; }
+        .message-content-wrapper { display: flex; align-items: flex-start; width: 100%; }
+        .message-body { flex: 1; }
 
-        /* 系统提示 */
+        .msg-avatar {
+            width: 32px; height: 32px; border-radius: 4px; border: 1px solid #333;
+            margin-right: 10px; object-fit: cover;
+        }
+        
+        .meta { color: #767676; font-size: 12px; margin-bottom: 4px; }
+        .meta .user { color: #ffa500; font-weight: bold; }
+        .meta .lang { color: #ce9178; margin-left: 8px; font-style: italic; }
+        .flipper-user { color: #ff8c00 !important; text-shadow: 0 0 5px rgba(255,140,0,0.5); }
+        .system-user { color: #4ec9b0 !important; }
+
+        .credits-badge {
+            background-color: #3c3c3c; color: #f9f1a5; font-size: 11px;
+            padding: 1px 6px; border-radius: 10px; margin-left: 8px; border: 1px solid #555;
+        }
+
+        .source-code {
+            background-color: #1e1e1e; padding: 8px 12px; border-radius: 4px;
+            color: #d4d4d4; font-size: 13px; border-left: 3px solid #0e639c;
+            margin-bottom: 6px; overflow-x: auto;
+        }
+        
+        .chat-output { color: #f9f1a5; font-size: 15px; padding-left: 12px; }
+        .chat-output::before { content: "↳ "; color: #ff8c00; }
+        .mention { color: #ff8c00; font-weight: bold; background-color: #331a00; padding: 0 4px; border-radius: 3px; }
+
+        .error-msg { color: #f48771; margin-bottom: 10px; }
         .system-msg { color: #4ec9b0; margin-bottom: 10px; font-size: 13px; }
 
         /* 底部输入区 */
         #input-area {
-            padding: 12px 16px; background-color: #1e1e1e;
-            border-top: 1px solid #333;
+            padding: 12px 16px; background-color: #1e1e1e; border-top: 1px solid #333;
             display: flex; flex-direction: column; gap: 8px;
         }
         .input-tools {
-            display: flex; justify-content: space-between; align-items: center;
-            font-size: 12px; color: #888;
+            display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #888;
         }
         #lang-badge {
-            background: #333; padding: 2px 8px; border-radius: 4px;
-            color: #4ec9b0; font-weight: bold;
+            background: #333; padding: 2px 8px; border-radius: 4px; color: #4ec9b0; font-weight: bold;
         }
         .input-line { display: flex; align-items: center; }
-        .prompt { color: #16c60c; margin-right: 8px; }
-        .prompt::before { content: ">>> "; color: #3b8eea; }
+        .prompt { color: #ff8c00; margin-right: 8px; font-weight: bold; }
+        .prompt::before { content: ">>> "; color: #ff8c00; }
 
         #message-input {
-            flex: 1; background: transparent; border: none;
-            color: #d4d4d4; font-family: inherit; font-size: 14px;
-            outline: none; caret-color: #fff;
+            flex: 1; background: transparent; border: none; color: #d4d4d4;
+            font-family: inherit; font-size: 14px; outline: none; caret-color: #ff8c00;
         }
 
+        /* Credits 签名栏 */
+        .credits-footer {
+            text-align: center; font-size: 11px; color: #555; padding: 6px;
+            background-color: #0c0c0c; border-top: 1px solid #222;
+        }
+        .credits-footer a { color: #569cd6; text-decoration: none; }
+        .credits-footer strong { color: #4ec9b0; }
+
+        /* Shout Out 顶部弹窗 */
+        #shoutout-toast {
+            position: fixed; top: 20px; right: 20px; background-color: #1e1e1e;
+            border: 2px solid #4ec9b0; color: #d4d4d4; padding: 15px 20px;
+            border-radius: 6px; box-shadow: 0 0 20px rgba(78, 201, 176, 0.4);
+            font-size: 14px; display: none; z-index: 9999; animation: slideIn 0.3s ease-out;
+        }
+        #shoutout-toast strong { color: #4ec9b0; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* 滚动条 */
         #chat-history::-webkit-scrollbar { width: 12px; }
         #chat-history::-webkit-scrollbar-track { background: #0c0c0c; }
         #chat-history::-webkit-scrollbar-thumb { background: #333; border: 3px solid #0c0c0c; border-radius: 6px; }
@@ -101,111 +138,209 @@
 </head>
 <body>
 
+    <!-- 初始化问卷 -->
+    <div id="setup-screen">
+        <h2>CodeChat 环境配置</h2>
+        <div class="form-group">
+            <label>你的昵称 (Nickname)</label>
+            <input type="text" id="setup-nickname" placeholder="例如: EnyuTu" value="hacker_01">
+        </div>
+        <div class="form-group">
+            <label>你的母语 (Native Language)</label>
+            <select id="setup-native-lang">
+                <option value="zh">中文 (Chinese)</option>
+                <option value="en">English</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>聊天使用的编程语言</label>
+            <select id="setup-code-lang">
+                <option value="python">Python</option>
+                <option value="cpp">C++</option>
+                <option value="java">Java</option>
+                <option value="js">JavaScript</option>
+            </select>
+        </div>
+        <button id="start-btn">进入终端 (Connect)</button>
+    </div>
+
+    <!-- 终端聊天室 -->
     <div id="terminal-container">
         <div id="terminal-header">
-            <div class="tab"><span class="tab-icon">{ }</span> Hybrid Chat (UDP + WebSocket)</div>
+            <div class="tab">
+                <img src="my-avatar.jpg" alt="EnyuTu" class="avatar-header" onerror="this.style.display='none'">
+                <span class="tab-icon">{ }</span> CodeChat - EnyuTu's Repl
+            </div>
         </div>
 
         <div id="chat-history">
-            <div class="system-msg">System: 已连接。你可以用代码说话，也可以接收来自 Python 终端的 UDP 广播。</div>
+            <div class="system-msg">System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`</div>
         </div>
 
         <div id="input-area">
             <div class="input-tools">
                 <div>Language: <span id="lang-badge">Python</span></div>
-                <div style="color: #555; font-size: 11px;">Press Shift+Tab to switch</div>
+                <div class="hint">Press Shift+Tab to switch</div>
             </div>
             <div class="input-line">
                 <div class="prompt"></div>
                 <input type="text" id="message-input" placeholder='print("hello world")' autocomplete="off" autofocus>
             </div>
         </div>
+
+        <!-- Credits 签名栏 -->
+        <div class="credits-footer">
+            Built with ❤️ by <strong>EnyuTu</strong> | Debugged by <strong>DeepSeek AI</strong>
+        </div>
+    </div>
+
+    <!-- Shout Out 弹窗 -->
+    <div id="shoutout-toast">
+        📢 <strong id="toast-from">User</strong> 给你发了一个 Shout Out!<br>
+        <span id="toast-text" style="font-size: 12px; color: #888;"></span>
     </div>
 
     <script>
-        const chatHistory = document.getElementById('chat-history');
-        const messageInput = document.getElementById('message-input');
-        const langBadge = document.getElementById('lang-badge');
+        let ws;
+        let myConfig = { nickname: '', nativeLang: '', codeLang: '' };
         
-        // 网页端的随机昵称
-        const myName = "WebDev_" + Math.floor(Math.random() * 1000); 
-        
+        const placeholders = {
+            python: 'print("hello world")', cpp: 'cout << "hello world" << endl;',
+            java: 'System.out.println("hello world");', js: 'console.log("hello world");'
+        };
         const langs = ['python', 'cpp', 'java', 'js'];
         let currentLangIndex = 0;
 
-        const placeholders = {
-            python: 'print("hello world")',
-            cpp: 'cout << "hello world" << endl;',
-            java: 'System.out.println("hello world");',
-            js: 'console.log("hello world");'
-        };
+        // 点击“进入终端”
+        document.getElementById('start-btn').addEventListener('click', () => {
+            const nickname = document.getElementById('setup-nickname').value.trim() || 'Anonymous';
+            const nativeLang = document.getElementById('setup-native-lang').value;
+            const codeLang = document.getElementById('setup-code-lang').value;
 
-        // 连接本地 Node.js 的 WebSocket 端口
-        const ws = new WebSocket('ws://localhost:8080');
+            myConfig = { nickname, nativeLang, codeLang };
+            currentLangIndex = langs.indexOf(codeLang);
 
-        ws.onopen = () => {
-            appendSystem(`You are connected as ${myName}. Waiting for messages...`);
-        };
+            document.getElementById('setup-screen').style.display = 'none';
+            document.getElementById('terminal-container').style.display = 'flex';
+            
+            document.getElementById('lang-badge').innerText = codeLang === 'cpp' ? 'C++' : codeLang.toUpperCase();
+            document.getElementById('message-input').placeholder = placeholders[codeLang];
+            document.getElementById('message-input').focus();
 
-        ws.onmessage = (event) => {
-            try {
+            connectWebSocket();
+        });
+
+        function connectWebSocket() {
+            // 适配 Render 环境 (自动获取 wss:// 或 ws://)
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            const wsUrl = `${protocol}//${host}`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                appendSystem("已连接到服务器。翻译与积分系统已就绪。");
+                ws.send(JSON.stringify({ type: 'init', userConfig: myConfig }));
+            };
+
+            ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                if (data.type === 'chat') {
+                
+                if (data.type === 'error') {
+                    appendError(data.text);
+                } else if (data.type === 'chat') {
                     appendChat(data);
+                } else if (data.type === 'shoutout_alert') {
+                    showShoutOutToast(data.from, data.text);
                 }
-            } catch (e) {
-                console.error("消息解析失败", e);
-            }
-        };
+            };
+        }
 
-        // 渲染消息
         function appendChat(data) {
             const block = document.createElement('div');
             block.className = 'message-block';
             
-            // 判断消息来源：是网页端发的（有代码），还是 Python 终端发的（纯文本）
-            const isPythonClient = data.user === "Python终端" || data.user === "Python终端 (UDP)";
-            const userClass = isPythonClient ? 'user python-user' : 'user';
-            const langDisplay = data.codeLang ? data.codeLang.toUpperCase() : 'UDP';
+            const isSystem = data.user === "SYSTEM";
+            const isFlipper = data.user === "FLIPPER"; 
+            
+            const userClass = isSystem ? 'user system-user' : (isFlipper ? 'user flipper-user' : 'user');
+            const langDisplay = isSystem ? 'COMMAND' : (isFlipper ? 'DOLPHIN' : (data.codeLang ? data.codeLang.toUpperCase() : 'UDP'));
+
+            let creditsHtml = '';
+            if (!isSystem && !isFlipper && data.userCredits !== undefined) {
+                creditsHtml = `<span class="credits-badge">🏆 ${data.userCredits} pts</span>`;
+            }
 
             let codeHtml = '';
             if (data.originalCode) {
                 codeHtml = `<div class="source-code">${escapeHtml(data.originalCode)}</div>`;
             }
 
-            // 如果是 Python 发来的，data.text 就是内容；如果是网页端，data.originalText 或 data.text
             const displayText = data.text || data.originalText;
+            const highlightedText = escapeHtml(displayText).replace(/@(\w+)/g, '<span class="mention">@$1</span>');
+
+            // 显示专属头像 (如果名字是 EnyuTu)
+            let avatarHtml = '';
+            if (data.user === 'EnyuTu') {
+                avatarHtml = `<img src="my-avatar.jpg" class="msg-avatar" alt="EnyuTu" onerror="this.style.display='none'">`;
+            } else {
+                avatarHtml = `<div class="msg-avatar" style="display:flex; align-items:center; justify-content:center; background:#1e1e1e; color:#555;">></div>`;
+            }
+
+            // 特殊颜色处理
+            let outputStyle = '';
+            if (isSystem) outputStyle = 'color: #4ec9b0; white-space: pre-wrap;';
+            if (isFlipper) outputStyle = 'color: #ff8c00; white-space: pre-wrap; font-weight: bold; text-shadow: 0 0 5px rgba(255,140,0,0.5);';
 
             block.innerHTML = `
-                <div class="meta">
-                    [${getTime()}] <span class="${userClass}">${data.user}</span> 
-                    <span class="lang">${langDisplay}</span>
+                <div class="message-content-wrapper">
+                    ${avatarHtml}
+                    <div class="message-body">
+                        <div class="meta">
+                            [${getTime()}] <span class="${userClass}">${data.user}</span> 
+                            ${creditsHtml}
+                            <span class="lang">${langDisplay}</span>
+                        </div>
+                        ${codeHtml}
+                        <div class="chat-output" style="${outputStyle}">${highlightedText}</div>
+                    </div>
                 </div>
-                ${codeHtml}
-                <div class="chat-output">${escapeHtml(displayText)}</div>
             `;
-            chatHistory.appendChild(block);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+            document.getElementById('chat-history').appendChild(block);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
         }
 
+        function appendError(msg) {
+            const block = document.createElement('div');
+            block.className = 'error-msg';
+            block.innerText = msg;
+            document.getElementById('chat-history').appendChild(block);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
+        }
+        
         function appendSystem(msg) {
             const block = document.createElement('div');
             block.className = 'system-msg';
             block.innerText = "System: " + msg;
-            chatHistory.appendChild(block);
-            chatHistory.scrollTop = chatHistory.scrollHeight;
+            document.getElementById('chat-history').appendChild(block);
+            document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
         }
 
-        function getTime() {
-            return new Date().toTimeString().split(' ')[0];
+        function showShoutOutToast(fromUser, text) {
+            const toast = document.getElementById('shoutout-toast');
+            document.getElementById('toast-from').innerText = fromUser;
+            document.getElementById('toast-text').innerText = text;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 4000);
         }
+
+        function getTime() { return new Date().toTimeString().split(' ')[0]; }
 
         function escapeHtml(unsafe) {
             if (!unsafe) return "";
-            return unsafe
-                 .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-                 .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-                 .replace(/'/g, "&#039;");
+            return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                         .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+                         .replace(/'/g, "&#039;");
         }
 
         // Shift+Tab 切换语言
@@ -214,40 +349,32 @@
                 e.preventDefault();
                 currentLangIndex = (currentLangIndex + 1) % langs.length;
                 const newLang = langs[currentLangIndex];
-                langBadge.innerText = newLang === 'cpp' ? 'C++' : newLang.charAt(0).toUpperCase() + newLang.slice(1);
-                messageInput.placeholder = placeholders[newLang];
-                messageInput.focus();
+                document.getElementById('lang-badge').innerText = newLang === 'cpp' ? 'C++' : newLang.toUpperCase();
+                document.getElementById('message-input').placeholder = placeholders[newLang];
+                myConfig.codeLang = newLang; // 更新配置
+                document.getElementById('message-input').focus();
             }
         });
 
-        // 回车发送
-        messageInput.addEventListener('keypress', (e) => {
+        // 发送消息
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                const text = messageInput.value;
+                const text = document.getElementById('message-input').value;
                 if (!text.trim() || ws.readyState !== WebSocket.OPEN) return;
 
-                const currentLang = langs[currentLangIndex];
                 const time = getTime();
-
-                // 本地先回显自己的消息
-                appendChat({
-                    user: myName,
-                    text: text, 
-                    originalText: text,
-                    originalCode: text,
-                    codeLang: currentLang
-                });
-
-                // 发送给服务器（服务器会提取文本并通过 UDP 广播给 Python）
+                // 本地回显，但不显示积分（等服务器广播回来才有最新积分）
+                // 为了防止重复显示，如果我们本地回显了，服务器广播时过滤掉自己
+                // 为了简单起见，这里我们先不本地回显，直接等服务器广播回来
+                // 这样能保证积分和排版100%准确！
+                
                 ws.send(JSON.stringify({ 
                     type: 'code',
-                    user: myName,
                     text: text, 
-                    time: time,
-                    lang: currentLang
+                    time: time
                 }));
                 
-                messageInput.value = '';
+                document.getElementById('message-input').value = '';
             }
         });
     </script>
