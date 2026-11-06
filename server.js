@@ -5,15 +5,41 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// ================= 翻译与过滤模块 =================
-const dictionary = {
-    "zh-en": { "你好": "Hello", "你好世界": "Hello World", "牛逼": "awesome" },
-    "en-zh": { "hello": "你好", "hello world": "你好世界", "awesome": "牛逼" }
+// ================= 多语言翻译与过滤模块 =================
+// 多语言基础词典 (以英文为基准桥梁，支持中、日、韩、法、德、西、俄)
+const langDict = {
+    "hello": { zh: "你好", ja: "こんにちは", ko: "안녕하세요", fr: "bonjour", de: "hallo", es: "hola", ru: "привет" },
+    "world": { zh: "世界", ja: "世界", ko: "세계", fr: "monde", de: "welt", es: "mundo", ru: "мир" },
+    "good": { zh: "好", ja: "良い", ko: "좋은", fr: "bon", de: "gut", es: "bueno", ru: "хорошо" },
+    "code": { zh: "代码", ja: "コード", ko: "코드", fr: "code", de: "code", es: "código", ru: "код" },
+    "awesome": { zh: "牛逼", ja: "素晴らしい", ko: "대단한", fr: "génial", de: "großartig", es: "increíble", ru: "потрясающе" },
+    "goodbye": { zh: "再见", ja: "さようなら", ko: "안녕히 가세요", fr: "au revoir", de: "auf wiedersehen", es: "adiós", ru: "до свидания" },
+    "hacker": { zh: "黑客", ja: "ハッカー", ko: "해커", fr: "pirate", de: "hacker", es: "hacker", ru: "хакер" }
 };
+
 function simpleTranslate(text, fromLang, toLang) {
     if (fromLang === toLang) return text;
-    const dict = dictionary[`${fromLang}-${toLang}`];
-    if (dict && dict[text.toLowerCase()]) return dict[text.toLowerCase()];
+    
+    let translated = text;
+    const lowerText = text.toLowerCase().trim();
+    
+    // 遍历多语言词典尝试翻译
+    for (const [enWord, translations] of Object.entries(langDict)) {
+        // 如果是英文，直接看目标语言
+        if (fromLang === 'en' && lowerText === enWord) {
+            return translations[toLang] || text;
+        }
+        
+        // 如果是从其他语言翻译
+        if (translations[fromLang] && lowerText === translations[fromLang].toLowerCase()) {
+            // 如果目标是英文，返回英文
+            if (toLang === 'en') return enWord;
+            // 如果目标是其他语言，通过英文作为桥梁返回对应翻译
+            if (translations[toLang]) return translations[toLang];
+        }
+    }
+    
+    // 如果没在词典里找到，原样返回并带上原始语言标签
     return text + ` [Original ${fromLang.toUpperCase()}]`;
 }
 
@@ -27,7 +53,7 @@ function censorText(text) {
     return censored;
 }
 
-// ================= 14种语言的代码解析模块 =================
+// ================= 14种编程语言的代码解析模块 =================
 function parseCodeToText(code, lang) {
     code = code.trim();
     if (code.length > 500) return "Code too long!";
@@ -122,7 +148,7 @@ wss.on('connection', (ws) => {
                     parsedText = censorText(parsedText);
                     ws.userData.credits += 2;
 
-                    // 系统指令
+                    // 系统指令处理
                     if (data.text.includes('/top')) {
                         const sortedUsers = Array.from(clients.values()).filter(u => u.config).sort((a, b) => b.credits - a.credits).slice(0, 5);
                         let lbText = "=== 🏆 极客积分排行榜 ===\n";
@@ -165,4 +191,4 @@ wss.on('connection', (ws) => {
     ws.on('close', () => clients.delete(ws));
 });
 
-server.listen(PORT, () => console.log(`[Cloud Server] Listening on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => console.log(`[Cloud Server] Listening on port ${PORT}`));
