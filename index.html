@@ -70,7 +70,6 @@
         .meta .lang { color: #ce9178; margin-left: 8px; font-style: italic; }
         .flipper-user { color: #ff8c00 !important; text-shadow: 0 0 5px rgba(255,140,0,0.5); }
         .system-user { color: #4ec9b0 !important; }
-        .ai-user { color: #c586c0 !important; font-weight: bold; }
 
         .credits-badge {
             background-color: #3c3c3c; color: #f9f1a5; font-size: 11px;
@@ -220,7 +219,7 @@
 
         <div id="chat-history">
             <div class="system-msg">System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`</div>
-            <div class="system-msg">System: 需要帮助？输入 `print("/ai 你的问题")` 即可召唤 DeepSeek AI！🤖</div>
+            <div class="system-msg">System: 输入 `print("/flipper")` 召唤赛博海豚！</div>
         </div>
 
         <div id="input-area">
@@ -350,17 +349,13 @@
             
             const isSystem = data.user === "SYSTEM";
             const isFlipper = data.user === "FLIPPER"; 
-            const isAI = data.user === "DeepSeek"; 
             
-            const userClass = isSystem ? 'user system-user' : (isFlipper ? 'user flipper-user' : (isAI ? 'user ai-user' : 'user'));
-            const langDisplay = isSystem ? 'COMMAND' : (isFlipper ? 'DOLPHIN' : (isAI ? 'AI' : (data.codeLang ? data.codeLang.toUpperCase() : 'UDP')));
+            const userClass = isSystem ? 'user system-user' : (isFlipper ? 'user flipper-user' : 'user');
+            const langDisplay = isSystem ? 'COMMAND' : (isFlipper ? 'DOLPHIN' : (data.codeLang ? data.codeLang.toUpperCase() : 'UDP'));
 
             let creditsHtml = '';
-            if (!isSystem && !isFlipper && !isAI && data.userCredits !== undefined) {
+            if (!isSystem && !isFlipper && data.userCredits !== undefined) {
                 creditsHtml = `<span class="credits-badge">🏆 ${data.userCredits} pts</span>`;
-            }
-            if (isAI) {
-                creditsHtml = `<span class="credits-badge" style="color:#c586c0; border-color:#c586c0;">🏆 ∞ pts</span>`;
             }
 
             let codeHtml = '';
@@ -374,8 +369,6 @@
             let avatarHtml = '';
             if (data.user === 'EnyuTu') {
                 avatarHtml = `<img src="my-avatar.jpg" class="msg-avatar" alt="EnyuTu" onerror="this.style.display='none'">`;
-            } else if (isAI) {
-                avatarHtml = `<div class="msg-avatar" style="display:flex; align-items:center; justify-content:center; background:#1e1e1e; border: 1px solid #c586c0; color:#c586c0; font-size:18px;">🤖</div>`;
             } else {
                 avatarHtml = `<div class="msg-avatar" style="display:flex; align-items:center; justify-content:center; background:#1e1e1e; color:#555;">></div>`;
             }
@@ -383,7 +376,6 @@
             let outputStyle = '';
             if (isSystem) outputStyle = 'color: #4ec9b0; white-space: pre-wrap;';
             if (isFlipper) outputStyle = 'color: #ff8c00; white-space: pre-wrap; font-weight: bold; text-shadow: 0 0 5px rgba(255,140,0,0.5);';
-            if (isAI) outputStyle = 'color: #c586c0; white-space: pre-wrap;';
 
             block.innerHTML = `
                 <div class="message-content-wrapper">
