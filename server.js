@@ -5,44 +5,27 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 
-// ================= 多语言翻译与过滤模块 =================
-// 多语言基础词典 (以英文为基准桥梁，支持中、日、韩、法、德、西、俄)
-const langDict = {
-    "hello": { zh: "你好", ja: "こんにちは", ko: "안녕하세요", fr: "bonjour", de: "hallo", es: "hola", ru: "привет" },
-    "world": { zh: "世界", ja: "世界", ko: "세계", fr: "monde", de: "welt", es: "mundo", ru: "мир" },
-    "good": { zh: "好", ja: "良い", ko: "좋은", fr: "bon", de: "gut", es: "bueno", ru: "хорошо" },
-    "code": { zh: "代码", ja: "コード", ko: "코드", fr: "code", de: "code", es: "código", ru: "код" },
-    "awesome": { zh: "牛逼", ja: "素晴らしい", ko: "대단한", fr: "génial", de: "großartig", es: "increíble", ru: "потрясающе" },
-    "goodbye": { zh: "再见", ja: "さようなら", ko: "안녕히 가세요", fr: "au revoir", de: "auf wiedersehen", es: "adiós", ru: "до свидания" },
-    "hacker": { zh: "黑客", ja: "ハッカー", ko: "해커", fr: "pirate", de: "hacker", es: "hacker", ru: "хакер" }
-};
-
-function simpleTranslate(text, fromLang, toLang) {
+// ================= 真实整句翻译引擎 =================
+async function translateText(text, fromLang, toLang) {
     if (fromLang === toLang) return text;
-    
-    let translated = text;
-    const lowerText = text.toLowerCase().trim();
-    
-    // 遍历多语言词典尝试翻译
-    for (const [enWord, translations] of Object.entries(langDict)) {
-        // 如果是英文，直接看目标语言
-        if (fromLang === 'en' && lowerText === enWord) {
-            return translations[toLang] || text;
-        }
+    try {
+        // 使用免密的 Google Translate 免费接口
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t&q=${encodeURIComponent(text)}`;
+        const response = await fetch(url);
+        const data = await response.json();
         
-        // 如果是从其他语言翻译
-        if (translations[fromLang] && lowerText === translations[fromLang].toLowerCase()) {
-            // 如果目标是英文，返回英文
-            if (toLang === 'en') return enWord;
-            // 如果目标是其他语言，通过英文作为桥梁返回对应翻译
-            if (translations[toLang]) return translations[toLang];
+        // 解析 Google 返回的嵌套数组
+        if (data && data[0] && Array.isArray(data[0])) {
+            return data[0].map(item => item[0]).join('');
         }
+        return text;
+    } catch (error) {
+        console.error("翻译请求失败:", error);
+        return text; // 如果翻译挂了，就降级返回原文本
     }
-    
-    // 如果没在词典里找到，原样返回并带上原始语言标签
-    return text + ` [Original ${fromLang.toUpperCase()}]`;
 }
 
+// ================= 脏话过滤模块 =================
 const badWords = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', '傻逼', 'sb', '操', '草泥马', '妈的'];
 function censorText(text) {
     let censored = text;
@@ -98,31 +81,36 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
-    clients.forEach((receiverData, receiverWs) => {
+// 注意：因为涉及到翻译，这里改成了 async 函数
+async function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
+    const senderConfig = senderWs.userData.config;
+
+    for (const [receiverWs, receiverData] of clients.entries()) {
         if (receiverWs.readyState === WebSocket.OPEN && receiverData.config) {
             const safeCode = rawData.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             const safeText = parsedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            const translatedText = simpleTranslate(safeText, senderWs.userData.config.nativeLang, receiverData.config.nativeLang);
+            
+            // 如果接收者语言和发送者语言不同，进行整句真实翻译
+            const translatedText = await translateText(safeText, senderConfig.nativeLang, receiverData.config.nativeLang);
 
             receiverWs.send(JSON.stringify({
                 type: 'chat',
-                user: senderWs.userData.config.nickname,
+                user: senderConfig.nickname,
                 userCredits: includeCredits ? senderWs.userData.credits : undefined,
-                codeLang: senderWs.userData.config.codeLang,
+                codeLang: senderConfig.codeLang,
                 originalCode: safeCode,
                 originalText: safeText,
                 translatedText: translatedText,
                 time: rawData.time
             }));
         }
-    });
+    }
 }
 
 wss.on('connection', (ws) => {
     ws.userData = { config: null, credits: 0, lastMessageTime: 0 };
 
-    ws.on('message', (message) => {
+    ws.on('message', async (message) => { // 这里加上了 async
         if (message.length > 2000) return;
 
         try {
@@ -148,7 +136,7 @@ wss.on('connection', (ws) => {
                     parsedText = censorText(parsedText);
                     ws.userData.credits += 2;
 
-                    // 系统指令处理
+                    // 系统指令处理 (系统指令不翻译，且不需要 await)
                     if (data.text.includes('/top')) {
                         const sortedUsers = Array.from(clients.values()).filter(u => u.config).sort((a, b) => b.credits - a.credits).slice(0, 5);
                         let lbText = "=== 🏆 极客积分排行榜 ===\n";
@@ -180,7 +168,8 @@ wss.on('connection', (ws) => {
                         });
                     }
 
-                    broadcastToAll(ws, data, parsedText, true);
+                    // 广播消息 (注意这里加了 await)
+                    await broadcastToAll(ws, data, parsedText, true);
                 } else {
                     ws.send(JSON.stringify({ type: 'error', text: `[Parse Error] 无法解析您的 ${ws.userData.config.codeLang.toUpperCase()} 代码。` }));
                 }
