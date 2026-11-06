@@ -50,7 +50,7 @@ function parseCodeToText(code, lang) {
     return (match && match[1]) ? match[1] : null;
 }
 
-// ================= 🧠 专属 AI 管家 (DeepSeek R1 接入版) =================
+// ================= 🧠 专属 AI 管家 (OpenRouter 自动免费路由版) =================
 const chatHistory = [];
 async function getAIResponse(prompt) {
     const openRouterKey = process.env.OPENROUTER_API_KEY; 
@@ -69,7 +69,6 @@ async function getAIResponse(prompt) {
             { role: "user", content: prompt }
         ];
 
-        // 切换到 OpenRouter 接口
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
@@ -79,7 +78,7 @@ async function getAIResponse(prompt) {
                 "X-Title": "CodeChat"
             },
             body: JSON.stringify({
-                model: "deepseek/deepseek-r1:free",
+                model: "openrouter/free", // ⭐ 使用 OpenRouter 自动免费路由，永不掉线
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 500 
@@ -90,10 +89,10 @@ async function getAIResponse(prompt) {
         
         if (!response.ok) {
             console.error("OpenRouter API 报错详情:", data);
-            return `[AI Error] DeepSeek 拒绝回答: ${data.error?.message || response.status}`;
+            return `[AI Error] 接口拒绝回答: ${data.error?.message || response.status}`;
         }
 
-        // 提取回复并剥离 R1 的思考标签
+        // 提取回复并剥离可能存在的思考标签
         let reply = data.choices[0].message.content;
         if (reply.includes("<thought>")) {
             reply = reply.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
@@ -105,7 +104,7 @@ async function getAIResponse(prompt) {
         return reply;
     } catch (error) {
         console.error("网络请求异常:", error);
-        return "[AI Error] 网络连接错误，DeepSeek 正在思考中。";
+        return "[AI Error] 网络连接错误，正在思考中。";
     }
 }
 
