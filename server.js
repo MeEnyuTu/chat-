@@ -50,57 +50,62 @@ function parseCodeToText(code, lang) {
     return (match && match[1]) ? match[1] : null;
 }
 
-// ================= 🧠 专属 AI 管家 =================
+// ================= 🧠 专属 AI 管家 (DeepSeek R1 接入版) =================
 const chatHistory = [];
 async function getAIResponse(prompt) {
-    const groqKey = process.env.GROQ_API_KEY; 
+    const openRouterKey = process.env.OPENROUTER_API_KEY; 
     
-    // 【加了日志，方便查错】
-    console.log("=== AI 唤醒了 ===");
-    console.log("收到的 Prompt:", prompt);
-    console.log("当前环境变量里是否有 Key:", groqKey ? "有" : "没有");
-
-    if (!groqKey) {
-        return "[Simulated AI] 哎呀，还没配置 API Key。请在 Render 配置 GROQ_API_KEY。🐬";
+    if (!openRouterKey) {
+        return "[Simulated AI] 哎呀，还没配置 OpenRouter API Key。请在 Render 配置 OPENROUTER_API_KEY。🐬";
     }
 
     try {
         const messages = [
             { 
                 role: "system", 
-                content: "你现在是极客聊天室的专属赛博管家，名字叫“Enyu的赛博海豚”。你的老板叫EnyuTu，他手里拿着Flipper Zero。你说话要简短、傲娇、喜欢用黑客术语。每次回复必须加一个 🐬 的emoji。如果别人骂你，你就嘲讽他代码全是Bug。" 
+                content: "你现在是极客聊天室的专属赛博管家。你极度聪明，脾气暴躁，极度讨厌蠢问题。老板是拿着 Flipper Zero 的 EnyuTu。别人问你问题，你要么用最简洁的一两句硬核代码给他解决，要么直接嘲讽他。每次回复不超过40个字，必须带一个 🐬。" 
             },
             ...chatHistory, 
             { role: "user", content: prompt }
         ];
 
-        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        // 切换到 OpenRouter 接口
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${groqKey}`
+                "Authorization": `Bearer ${openRouterKey}`,
+                "HTTP-Referer": "https://chat-w9w6.onrender.com", 
+                "X-Title": "CodeChat"
             },
             body: JSON.stringify({
-                model: "llama-3.3-70b-versatile",
+                model: "deepseek/deepseek-r1:free",
                 messages: messages,
                 temperature: 0.7,
-                max_tokens: 300
+                max_tokens: 500 
             })
         });
-
-        console.log("Groq API 响应状态码:", response.status);
 
         const data = await response.json();
         
         if (!response.ok) {
-            console.error("Groq API 报错详情:", data);
-            return `[AI Error] Groq 返回错误: ${data.error?.message || response.status}`;
+            console.error("OpenRouter API 报错详情:", data);
+            return `[AI Error] DeepSeek 拒绝回答: ${data.error?.message || response.status}`;
         }
 
-        return data.choices[0].message.content;
+        // 提取回复并剥离 R1 的思考标签
+        let reply = data.choices[0].message.content;
+        if (reply.includes("<thought>")) {
+            reply = reply.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+        }
+        if (reply.includes("​")) {
+            reply = reply.split("​").pop().trim();
+        }
+
+        return reply;
     } catch (error) {
         console.error("网络请求异常:", error);
-        return "[AI Error] 网络连接错误，无法召唤管家。";
+        return "[AI Error] 网络连接错误，DeepSeek 正在思考中。";
     }
 }
 
