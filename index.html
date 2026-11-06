@@ -219,19 +219,19 @@
         <div id="terminal-header">
             <div class="tab">
                 <img src="my-avatar.jpg" alt="EnyuTu" class="avatar-header" onerror="this.style.display='none'">
-                <span class="tab-icon">{ }</span> CodeChat - EnyuTu's Repl
+                <span class="tab-icon">{ }</span> <span id="ui-title">CodeChat - EnyuTu's Repl</span>
             </div>
         </div>
 
         <div id="chat-history">
-            <div class="system-msg">System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`</div>
-            <div class="system-msg">System: 输入 `print("/flipper")` 召唤赛博海豚！</div>
+            <div class="system-msg" id="ui-sys-1">System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`</div>
+            <div class="system-msg" id="ui-sys-2">System: 输入 `print("/flipper")` 召唤赛博海豚！</div>
         </div>
 
         <div id="input-area">
             <div class="input-tools">
-                <div>Language: <span id="lang-badge">Python</span></div>
-                <div class="hint">Press Shift+Tab to switch</div>
+                <div><span id="ui-lang-label">Language:</span> <span id="lang-badge">Python</span></div>
+                <div class="hint" id="ui-hint">Press Shift+Tab to switch</div>
             </div>
             <div class="input-line">
                 <div class="prompt"></div>
@@ -241,15 +241,15 @@
 
         <!-- Credits 签名栏 -->
         <div class="credits-footer">
-            Built with ❤️ by <strong>EnyuTu</strong> 
-            <button id="open-credits-btn" class="credits-btn">[ 💻 Credits & Shout Outs ]</button>
-            Debugged by <strong>DeepSeek</strong>
+            <span id="ui-credits-built">Built with ❤️ by</span> <strong>EnyuTu</strong> 
+            <button id="open-credits-btn" class="credits-btn" id="ui-credits-btn">[ 💻 Credits & Shout Outs ]</button>
+            <span id="ui-credits-debugged">Debugged by</span> <strong>DeepSeek</strong>
         </div>
     </div>
 
     <!-- Shout Out 弹窗 -->
     <div id="shoutout-toast">
-        📢 <strong id="toast-from">User</strong> 给你发了一个 Shout Out!<br>
+        📢 <strong id="toast-from">User</strong> <span id="ui-shoutout">给你发了一个 Shout Out!</span><br>
         <span id="toast-text" style="font-size: 12px; color: #888;"></span>
     </div>
 
@@ -306,6 +306,30 @@
             php: 'PHP', ruby: 'Ruby', shell: 'Shell', swift: 'Swift', kotlin: 'Kotlin'
         };
 
+        // ================= UI 多语言字典 =================
+        const uiText = {
+            zh: {
+                sysWelcome: 'System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`',
+                sysFlipper: 'System: 输入 `print("/flipper")` 召唤赛博海豚！',
+                sysConnected: '已连接到服务器。翻译与积分系统已就绪。',
+                langLabel: '语言：',
+                hint: '按 Shift+Tab 切换语言',
+                creditsBuilt: 'Built with ❤️ by',
+                creditsDebugged: 'Debugged by',
+                shoutoutMsg: '给你发了一个 Shout Out!'
+            },
+            en: {
+                sysWelcome: 'System: Welcome to Geek Polyglot Chat. Try `print("/credits")`',
+                sysFlipper: 'System: Type `print("/flipper")` to summon the Cyber Dolphin!',
+                sysConnected: 'Connected to server. Translation & Credits ready.',
+                langLabel: 'Language:',
+                hint: 'Press Shift+Tab to switch',
+                creditsBuilt: 'Built with ❤️ by',
+                creditsDebugged: 'Debugged by',
+                shoutoutMsg: 'sent you a Shout Out!'
+            }
+        };
+
         document.getElementById('start-btn').addEventListener('click', () => {
             const nickname = document.getElementById('setup-nickname').value.trim() || 'Anonymous';
             const nativeLang = document.getElementById('setup-native-lang').value;
@@ -313,6 +337,16 @@
 
             myConfig = { nickname, nativeLang, codeLang };
             currentLangIndex = langs.indexOf(codeLang);
+
+            // 应用前端 UI 语言
+            const t = uiText[nativeLang] || uiText['en']; // 如果没做日语法语，默认降级英文
+            document.getElementById('ui-sys-1').innerText = t.sysWelcome;
+            document.getElementById('ui-sys-2').innerText = t.sysFlipper;
+            document.getElementById('ui-lang-label').innerText = t.langLabel;
+            document.getElementById('ui-hint').innerText = t.hint;
+            document.getElementById('ui-credits-built').innerText = t.creditsBuilt;
+            document.getElementById('ui-credits-debugged').innerText = t.creditsDebugged;
+            document.getElementById('ui-shoutout').innerText = t.shoutoutMsg;
 
             document.getElementById('setup-screen').style.display = 'none';
             document.getElementById('terminal-container').style.display = 'flex';
@@ -332,7 +366,8 @@
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                appendSystem("已连接到服务器。翻译与积分系统已就绪。");
+                const t = uiText[myConfig.nativeLang] || uiText['en'];
+                appendSystem(t.sysConnected);
                 ws.send(JSON.stringify({ type: 'init', userConfig: myConfig }));
             };
 
@@ -412,7 +447,7 @@
         function appendSystem(msg) {
             const block = document.createElement('div');
             block.className = 'system-msg';
-            block.innerText = "System: " + msg;
+            block.innerText = msg;
             document.getElementById('chat-history').appendChild(block);
             document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
         }
