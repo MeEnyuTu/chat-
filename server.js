@@ -10,7 +10,6 @@ async function translateText(text, fromLang, toLang) {
     if (fromLang === toLang || !text.trim()) return text;
     try {
         const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLang}|${toLang}`;
-        // 增加 5 秒超时控制，防止翻译接口卡死导致聊天室卡顿
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
@@ -20,19 +19,17 @@ async function translateText(text, fromLang, toLang) {
         const data = await response.json();
         
         if (data && data.responseData && data.responseData.translatedText) {
-            if (data.responseData.translatedText.includes("MYMEMORY WARNING")) {
-                return text;
-            }
+            if (data.responseData.translatedText.includes("MYMEMORY WARNING")) return text;
             return data.responseData.translatedText;
         }
         return text;
     } catch (error) {
-        console.error("翻译请求失败或超时:", error.message);
+        console.error("翻译超时或失败:", error.message);
         return text; 
     }
 }
 
-// ================= 脏话过滤模块 =================
+// ================= 脏话过滤 =================
 const badWords = ['fuck', 'shit', 'bitch', 'cunt', 'asshole', '傻逼', 'sb', '操', '草泥马', '妈的'];
 function censorText(text) {
     let censored = text;
@@ -43,16 +40,13 @@ function censorText(text) {
     return censored;
 }
 
-// ================= 14种编程语言的代码解析模块 (超级兼容版) =================
+// ================= 代码解析 =================
 function parseCodeToText(code, lang) {
     code = code.trim();
     if (code.length > 500) return "Code too long!";
     let match = null;
-    
-    // 兼容全角引号 “ ” 和半角引号 " '，忽略大小写 (i)
     const openQ = `['"“]`;
     const closeQ = `['"”]`;
-    
     try {
         switch (lang) {
             case 'python': match = code.match(new RegExp(`print\\s*\\(\\s*f?${openQ}(.*?)${closeQ}`, 'is')); break;
@@ -95,16 +89,25 @@ const wss = new WebSocket.Server({ server });
 
 async function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
     const senderConfig = senderWs.userData.config;
+    const senderRoom = senderWs.userData.room || 'main'; // 默认在大厅
 
     for (const [receiverWs, receiverData] of clients.entries()) {
-        if (receiverWs.readyState === WebSocket.OPEN && receiverData.config) {
+        const receiverRoom = receiverData.room || 'main';
+        
+        // 核心：房间隔离，只能同房间的人收到
+        if (receiverWs.readyState === WebSocket.OPEN && receiverData.config && senderRoom === receiverRoom) {
             const safeCode = rawData.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             const safeText = parsedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            const translatedText = await translateText(safeText, senderConfig.nativeLang, receiverData.config.nativeLang);
+            // 电报房间强制不翻译，追求纯正的极客感（你也可以去掉这个判断保留翻译）
+            let translatedText = safeText;
+            if (senderRoom !== 'telegraph') {
+                translatedText = await translateText(safeText, senderConfig.nativeLang, receiverData.config.nativeLang);
+            }
 
             receiverWs.send(JSON.stringify({
                 type: 'chat',
+                room: senderRoom,
                 user: senderConfig.nickname,
                 userCredits: includeCredits ? senderWs.userData.credits : undefined,
                 codeLang: senderConfig.codeLang,
@@ -118,7 +121,7 @@ async function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
 }
 
 wss.on('connection', (ws) => {
-    ws.userData = { config: null, credits: 0, lastMessageTime: 0 };
+    ws.userData = { config: null, credits: 0, lastMessageTime: 0, room: 'main' };
 
     ws.on('message', async (message) => { 
         if (message.length > 2000) return;
@@ -132,10 +135,17 @@ wss.on('connection', (ws) => {
                 return;
             }
 
+            // 切换房间指令
+            if (data.type === 'switch_room') {
+                ws.userData.room = data.room;
+                ws.send(JSON.stringify({ type: 'system', text: `Switched to [${data.room.toUpperCase()}] room.` }));
+                return;
+            }
+
             if (data.type === 'code' && ws.userData.config) {
                 const now = Date.now();
                 if (now - ws.userData.lastMessageTime < 1000) {
-                    ws.send(JSON.stringify({ type: 'error', text: "发送太快啦！请稍后再试。" }));
+                    ws.send(JSON.stringify({ type: 'error', text: "发送太快啦！" }));
                     return;
                 }
                 ws.userData.lastMessageTime = now;
@@ -154,7 +164,7 @@ wss.on('connection', (ws) => {
                         return;
                     }
                     if (data.text.includes('/credits')) {
-                        const creditsText = "=== 💻 CodeChat Credits ===\n👑 Creator: EnyuTu\n🤖 Debug Helper: DeepSeek AI\n⚙️ Stack: Node.js + WebSockets\nShout out to all the geeks! :)";
+                        const creditsText = "=== 💻 CodeChat Credits ===\n👑 Creator: EnyuTu\n🤖 Debug Helper: DeepSeek AI\nShout out to all the geeks! :)";
                         ws.send(JSON.stringify({ type: 'chat', user: "SYSTEM", originalCode: data.text, originalText: creditsText, time: data.time }));
                         return;
                     }
@@ -178,8 +188,7 @@ wss.on('connection', (ws) => {
 
                     await broadcastToAll(ws, data, parsedText, true);
                 } else {
-                    // 升级版错误提示，告知用户可能是语言选错或引号问题
-                    ws.send(JSON.stringify({ type: 'error', text: `[Parse Error] 无法解析您的代码。请检查：1. 您当前选中的语言是否为 ${ws.userData.config.codeLang.toUpperCase()}；2. 是否使用了正确的语法（如 print("hello")）；3. 请务必使用英文半角引号。` }));
+                    ws.send(JSON.stringify({ type: 'error', text: `[Parse Error] 无法解析您的代码。请检查语法或切换语言。` }));
                 }
             }
         } catch (err) { console.error(err); }
