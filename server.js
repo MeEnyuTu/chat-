@@ -7,21 +7,28 @@ const PORT = process.env.PORT || 8080;
 
 // ================= 真实整句翻译引擎 =================
 async function translateText(text, fromLang, toLang) {
-    if (fromLang === toLang) return text;
+    if (fromLang === toLang || !text.trim()) return text;
     try {
-        // 使用免密的 Google Translate 免费接口
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t&q=${encodeURIComponent(text)}`;
-        const response = await fetch(url);
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromLang}|${toLang}`;
+        // 增加 5 秒超时控制，防止翻译接口卡死导致聊天室卡顿
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
         const data = await response.json();
         
-        // 解析 Google 返回的嵌套数组
-        if (data && data[0] && Array.isArray(data[0])) {
-            return data[0].map(item => item[0]).join('');
+        if (data && data.responseData && data.responseData.translatedText) {
+            if (data.responseData.translatedText.includes("MYMEMORY WARNING")) {
+                return text;
+            }
+            return data.responseData.translatedText;
         }
         return text;
     } catch (error) {
-        console.error("翻译请求失败:", error);
-        return text; // 如果翻译挂了，就降级返回原文本
+        console.error("翻译请求失败或超时:", error.message);
+        return text; 
     }
 }
 
@@ -36,24 +43,29 @@ function censorText(text) {
     return censored;
 }
 
-// ================= 14种编程语言的代码解析模块 =================
+// ================= 14种编程语言的代码解析模块 (超级兼容版) =================
 function parseCodeToText(code, lang) {
     code = code.trim();
     if (code.length > 500) return "Code too long!";
     let match = null;
+    
+    // 兼容全角引号 “ ” 和半角引号 " '，忽略大小写 (i)
+    const openQ = `['"“]`;
+    const closeQ = `['"”]`;
+    
     try {
         switch (lang) {
-            case 'python': match = code.match(/print\s*\(\s*f?['"](.*?)['"]/s); break;
-            case 'c': case 'cpp': match = code.match(/(?:cout\s*<<|printf\s*\()\s*['"](.*?)['"]/s); break;
-            case 'csharp': match = code.match(/Console\.Write(?:Line)?\s*\(\s*['"](.*?)['"]/s); break;
-            case 'java': match = code.match(/System\.out\.print(?:ln)?\s*\(\s*['"](.*?)['"]\s*\)/s); break;
-            case 'js': case 'ts': match = code.match(/console\.log\s*\(\s*['"`](.*?)['"`]\s*\)/s); break;
-            case 'go': match = code.match(/fmt\.Print(?:ln|f)?\s*\(\s*['"](.*?)['"]/s); break;
-            case 'rust': match = code.match(/println!\s*\(\s*['"](.*?)['"]/s); break;
-            case 'php': match = code.match(/(?:echo\s+|print\s*\()\s*['"](.*?)['"]/s); break;
-            case 'ruby': match = code.match(/(?:puts|print)\s*['"](.*?)['"]/s); break;
-            case 'shell': match = code.match(/echo\s*['"](.*?)['"]/s); break;
-            case 'swift': case 'kotlin': match = code.match(/print(?:ln)?\s*\(\s*['"](.*?)['"]/s); break;
+            case 'python': match = code.match(new RegExp(`print\\s*\\(\\s*f?${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'c': case 'cpp': match = code.match(new RegExp(`(?:cout\\s*<<|printf\\s*\\()\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'csharp': match = code.match(new RegExp(`Console\\.Write(?:Line)?\\s*\\(\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'java': match = code.match(new RegExp(`System\\.out\\.print(?:ln)?\\s*\\(\\s*${openQ}(.*?)${closeQ}\\s*\\)`, 'is')); break;
+            case 'js': case 'ts': match = code.match(new RegExp(`console\\.log\\s*\\(\\s*[\`"“](.*?)['"\`”]\\s*\\)`, 'is')); break;
+            case 'go': match = code.match(new RegExp(`fmt\\.Print(?:ln|f)?\\s*\\(\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'rust': match = code.match(new RegExp(`println!\\s*\\(\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'php': match = code.match(new RegExp(`(?:echo\\s+|print\\s*\\()\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'ruby': match = code.match(new RegExp(`(?:puts|print)\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'shell': match = code.match(new RegExp(`echo\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
+            case 'swift': case 'kotlin': match = code.match(new RegExp(`print(?:ln)?\\s*\\(\\s*${openQ}(.*?)${closeQ}`, 'is')); break;
         }
     } catch (e) { return null; }
     return (match && match[1]) ? match[1] : null;
@@ -81,7 +93,6 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server });
 
-// 注意：因为涉及到翻译，这里改成了 async 函数
 async function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
     const senderConfig = senderWs.userData.config;
 
@@ -90,7 +101,6 @@ async function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
             const safeCode = rawData.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             const safeText = parsedText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
             
-            // 如果接收者语言和发送者语言不同，进行整句真实翻译
             const translatedText = await translateText(safeText, senderConfig.nativeLang, receiverData.config.nativeLang);
 
             receiverWs.send(JSON.stringify({
@@ -110,7 +120,7 @@ async function broadcastToAll(senderWs, rawData, parsedText, includeCredits) {
 wss.on('connection', (ws) => {
     ws.userData = { config: null, credits: 0, lastMessageTime: 0 };
 
-    ws.on('message', async (message) => { // 这里加上了 async
+    ws.on('message', async (message) => { 
         if (message.length > 2000) return;
 
         try {
@@ -136,7 +146,6 @@ wss.on('connection', (ws) => {
                     parsedText = censorText(parsedText);
                     ws.userData.credits += 2;
 
-                    // 系统指令处理 (系统指令不翻译，且不需要 await)
                     if (data.text.includes('/top')) {
                         const sortedUsers = Array.from(clients.values()).filter(u => u.config).sort((a, b) => b.credits - a.credits).slice(0, 5);
                         let lbText = "=== 🏆 极客积分排行榜 ===\n";
@@ -155,7 +164,6 @@ wss.on('connection', (ws) => {
                         return;
                     }
 
-                    // Shout Out 检测
                     const mentionRegex = /@(\w+)/g;
                     let mentionMatch;
                     const mentionedUsers = [];
@@ -168,10 +176,10 @@ wss.on('connection', (ws) => {
                         });
                     }
 
-                    // 广播消息 (注意这里加了 await)
                     await broadcastToAll(ws, data, parsedText, true);
                 } else {
-                    ws.send(JSON.stringify({ type: 'error', text: `[Parse Error] 无法解析您的 ${ws.userData.config.codeLang.toUpperCase()} 代码。` }));
+                    // 升级版错误提示，告知用户可能是语言选错或引号问题
+                    ws.send(JSON.stringify({ type: 'error', text: `[Parse Error] 无法解析您的代码。请检查：1. 您当前选中的语言是否为 ${ws.userData.config.codeLang.toUpperCase()}；2. 是否使用了正确的语法（如 print("hello")）；3. 请务必使用英文半角引号。` }));
                 }
             }
         } catch (err) { console.error(err); }
