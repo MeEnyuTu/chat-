@@ -11,7 +11,6 @@
             height: 100vh; display: flex; justify-content: center; align-items: center;
         }
 
-        /* 初始化问卷 */
         #setup-screen {
             background-color: #1e1e1e; padding: 40px; border-radius: 8px;
             border: 1px solid #333; width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
@@ -31,7 +30,6 @@
         }
         #start-btn:hover { background-color: #1177bb; }
 
-        /* 终端容器 */
         #terminal-container {
             width: 100%; max-width: 1000px; height: 90vh; background-color: #0c0c0c;
             display: none; flex-direction: column; border: 1px solid #333;
@@ -52,7 +50,6 @@
         }
         .tab-icon { color: #3b8eea; font-weight: bold; }
 
-        /* 聊天记录区 */
         #chat-history {
             flex: 1; padding: 16px; overflow-y: auto; line-height: 1.6; white-space: pre-wrap;
         }
@@ -89,7 +86,6 @@
         .error-msg { color: #f48771; margin-bottom: 10px; }
         .system-msg { color: #4ec9b0; margin-bottom: 10px; font-size: 13px; }
 
-        /* 底部输入区 */
         #input-area {
             padding: 12px 16px; background-color: #1e1e1e; border-top: 1px solid #333;
             display: flex; flex-direction: column; gap: 8px;
@@ -110,7 +106,6 @@
             font-family: inherit; font-size: 14px; outline: none; caret-color: #ff8c00;
         }
 
-        /* Credits 页脚与弹窗 */
         .credits-footer {
             text-align: center; font-size: 11px; color: #555; padding: 8px;
             background-color: #0c0c0c; border-top: 1px solid #222;
@@ -124,7 +119,6 @@
         }
         .credits-btn:hover { color: #fff; text-shadow: 0 0 8px #ff8c00; }
 
-        /* Shout Out 弹窗 */
         #shoutout-toast {
             position: fixed; top: 20px; right: 20px; background-color: #1e1e1e;
             border: 2px solid #4ec9b0; color: #d4d4d4; padding: 15px 20px;
@@ -134,7 +128,6 @@
         #shoutout-toast strong { color: #4ec9b0; }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-        /* Credits 弹窗 */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.85); display: none; justify-content: center; align-items: center;
@@ -164,7 +157,6 @@
         .credit-divider { height: 1px; background: #333; margin: 15px 0; }
         .modal-footer { background-color: #0c0c0c; padding: 10px; text-align: center; color: #4ec9b0; font-size: 12px; border-bottom-left-radius: 5px; border-bottom-right-radius: 5px; }
 
-        /* 滚动条 */
         #chat-history::-webkit-scrollbar { width: 12px; }
         #chat-history::-webkit-scrollbar-track { background: #0c0c0c; }
         #chat-history::-webkit-scrollbar-thumb { background: #333; border: 3px solid #0c0c0c; border-radius: 6px; }
@@ -172,7 +164,6 @@
 </head>
 <body>
 
-    <!-- 初始化问卷 -->
     <div id="setup-screen">
         <h2>CodeChat 环境配置</h2>
         <div class="form-group">
@@ -214,7 +205,6 @@
         <button id="start-btn">进入终端 (Connect)</button>
     </div>
 
-    <!-- 终端聊天室 -->
     <div id="terminal-container">
         <div id="terminal-header">
             <div class="tab">
@@ -239,21 +229,18 @@
             </div>
         </div>
 
-        <!-- Credits 签名栏 -->
         <div class="credits-footer">
             <span id="ui-credits-built">Built with ❤️ by</span> <strong>EnyuTu</strong> 
-            <button id="open-credits-btn" class="credits-btn" id="ui-credits-btn">[ 💻 Credits & Shout Outs ]</button>
+            <button id="open-credits-btn" class="credits-btn">[ 💻 Credits & Shout Outs ]</button>
             <span id="ui-credits-debugged">Debugged by</span> <strong>DeepSeek</strong>
         </div>
     </div>
 
-    <!-- Shout Out 弹窗 -->
     <div id="shoutout-toast">
         📢 <strong id="toast-from">User</strong> <span id="ui-shoutout">给你发了一个 Shout Out!</span><br>
         <span id="toast-text" style="font-size: 12px; color: #888;"></span>
     </div>
 
-    <!-- Credits 弹窗 -->
     <div id="credits-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -306,7 +293,6 @@
             php: 'PHP', ruby: 'Ruby', shell: 'Shell', swift: 'Swift', kotlin: 'Kotlin'
         };
 
-        // ================= UI 多语言字典 =================
         const uiText = {
             zh: {
                 sysWelcome: 'System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`',
@@ -338,8 +324,7 @@
             myConfig = { nickname, nativeLang, codeLang };
             currentLangIndex = langs.indexOf(codeLang);
 
-            // 应用前端 UI 语言
-            const t = uiText[nativeLang] || uiText['en']; // 如果没做日语法语，默认降级英文
+            const t = uiText[nativeLang] || uiText['en']; 
             document.getElementById('ui-sys-1').innerText = t.sysWelcome;
             document.getElementById('ui-sys-2').innerText = t.sysFlipper;
             document.getElementById('ui-lang-label').innerText = t.langLabel;
@@ -404,7 +389,7 @@
                 codeHtml = `<div class="source-code">${escapeHtml(data.originalCode)}</div>`;
             }
 
-            const displayText = data.text || data.originalText;
+            const displayText = data.translatedText || data.text || data.originalText;
             const highlightedText = escapeHtml(displayText).replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 
             let avatarHtml = '';
