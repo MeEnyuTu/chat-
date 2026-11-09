@@ -9,12 +9,27 @@
             font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
             background-color: #0c0c0c; color: #cccccc;
             height: 100vh; display: flex; justify-content: center; align-items: center;
+            transition: background-color 0.5s;
         }
+
+        /* 🌟 电报机模式全局样式 (由 JS 动态添加) */
+        body.telegraph-mode {
+            background-color: #011209; /* 复古黑绿底色 */
+        }
+        body.telegraph-mode #terminal-container {
+            border-color: #0f0; box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+        }
+        body.telegraph-mode .tab-icon { color: #0f0; }
+        body.telegraph-mode #terminal-header { border-bottom: 1px solid #0f0; color: #0f0; }
+        body.telegraph-mode .chat-output { color: #0f0 !important; }
+        body.telegraph-mode #input-area { border-top: 1px solid #0f0; background-color: #011209;}
+        body.telegraph-mode .prompt, body.telegraph-mode .prompt::before { color: #0f0; }
+        body.telegraph-mode #message-input { color: #0f0; caret-color: #0f0; }
 
         #setup-screen {
             background-color: #1e1e1e; padding: 40px; border-radius: 8px;
             border: 1px solid #333; width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            display: flex; flex-direction: column; gap: 20px;
+            display: flex; flex-direction: column; gap: 20px; z-index: 10;
         }
         #setup-screen h2 { color: #4ec9b0; text-align: center; font-weight: normal; }
         .form-group { display: flex; flex-direction: column; gap: 8px; }
@@ -34,7 +49,7 @@
             width: 100%; max-width: 1000px; height: 90vh; background-color: #0c0c0c;
             display: none; flex-direction: column; border: 1px solid #333;
             border-radius: 4px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-            position: relative;
+            position: relative; transition: border-color 0.5s;
         }
         #terminal-header {
             background-color: #1f1f1f; padding: 8px 16px; display: flex; align-items: center;
@@ -209,13 +224,13 @@
         <div id="terminal-header">
             <div class="tab">
                 <img src="my-avatar.jpg" alt="EnyuTu" class="avatar-header" onerror="this.style.display='none'">
-                <span class="tab-icon">{ }</span> <span id="ui-title">CodeChat - EnyuTu's Repl</span>
+                <span class="tab-icon">{ }</span> <span id="ui-title">CodeChat - EnyuTu's Repl [MAIN]</span>
             </div>
         </div>
 
         <div id="chat-history">
             <div class="system-msg" id="ui-sys-1">System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`</div>
-            <div class="system-msg" id="ui-sys-2">System: 输入 `print("/flipper")` 召唤赛博海豚！</div>
+            <div class="system-msg" id="ui-sys-2">System: 输入 `print("/telegraph")` 进入电报机复古房间！</div>
         </div>
 
         <div id="input-area">
@@ -257,7 +272,7 @@
                 </div>
                 <div class="credit-divider"></div>
                 <div class="credit-item">
-                    <div class="credit-avatar" style="display:flex; align-items:center; justify-content:center; background:#1e1e1e; border: 1px solid #4ec9b0; color:#4ec9b0; font-size:20px;">🤖</div>
+                    <div class="credit-avatar" style="display:flex; align-items: center; justify-content: center; background:#1e1e1e; border: 1px solid #4ec9b0; color:#4ec9b0; font-size:20px;">🤖</div>
                     <div class="credit-info">
                         <h3>DeepSeek <span class="badge-debugger">Debug Helper</span></h3>
                         <p>"提供全栈代码架构支持、正则解析优化以及无限次 Debug 服务。"</p>
@@ -273,6 +288,7 @@
     <script>
         let ws;
         let myConfig = { nickname: '', nativeLang: '', codeLang: '' };
+        let currentRoom = 'main';
         
         const langs = ['python', 'cpp', 'java', 'js', 'ts', 'c', 'csharp', 'go', 'rust', 'php', 'ruby', 'shell', 'swift', 'kotlin'];
         let currentLangIndex = 0;
@@ -294,26 +310,8 @@
         };
 
         const uiText = {
-            zh: {
-                sysWelcome: 'System: 欢迎来到极客多语言代码聊天室。Try `print("/credits")`',
-                sysFlipper: 'System: 输入 `print("/flipper")` 召唤赛博海豚！',
-                sysConnected: '已连接到服务器。翻译与积分系统已就绪。',
-                langLabel: '语言：',
-                hint: '按 Shift+Tab 切换语言',
-                creditsBuilt: 'Built with ❤️ by',
-                creditsDebugged: 'Debugged by',
-                shoutoutMsg: '给你发了一个 Shout Out!'
-            },
-            en: {
-                sysWelcome: 'System: Welcome to Geek Polyglot Chat. Try `print("/credits")`',
-                sysFlipper: 'System: Type `print("/flipper")` to summon the Cyber Dolphin!',
-                sysConnected: 'Connected to server. Translation & Credits ready.',
-                langLabel: 'Language:',
-                hint: 'Press Shift+Tab to switch',
-                creditsBuilt: 'Built with ❤️ by',
-                creditsDebugged: 'Debugged by',
-                shoutoutMsg: 'sent you a Shout Out!'
-            }
+            zh: { sysConnected: '已连接到服务器。', langLabel: '语言：', hint: '按 Shift+Tab 切换', shoutoutMsg: '给你发了一个 Shout Out!' },
+            en: { sysConnected: 'Connected to server.', langLabel: 'Language:', hint: 'Press Shift+Tab to switch', shoutoutMsg: 'sent you a Shout Out!' }
         };
 
         document.getElementById('start-btn').addEventListener('click', () => {
@@ -325,48 +323,78 @@
             currentLangIndex = langs.indexOf(codeLang);
 
             const t = uiText[nativeLang] || uiText['en']; 
-            document.getElementById('ui-sys-1').innerText = t.sysWelcome;
-            document.getElementById('ui-sys-2').innerText = t.sysFlipper;
             document.getElementById('ui-lang-label').innerText = t.langLabel;
             document.getElementById('ui-hint').innerText = t.hint;
-            document.getElementById('ui-credits-built').innerText = t.creditsBuilt;
-            document.getElementById('ui-credits-debugged').innerText = t.creditsDebugged;
             document.getElementById('ui-shoutout').innerText = t.shoutoutMsg;
 
             document.getElementById('setup-screen').style.display = 'none';
             document.getElementById('terminal-container').style.display = 'flex';
-            
             document.getElementById('lang-badge').innerText = langNames[codeLang];
             document.getElementById('message-input').placeholder = placeholders[codeLang];
             document.getElementById('message-input').focus();
 
-            connectWebSocket();
+            connectWebSocket(t.sysConnected);
         });
 
-        function connectWebSocket() {
+        function connectWebSocket(sysConnectedText) {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            const wsUrl = `${protocol}//${host}`;
+            const wsUrl = `${protocol}//${window.location.host}`;
 
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                const t = uiText[myConfig.nativeLang] || uiText['en'];
-                appendSystem(t.sysConnected);
+                appendSystem(sysConnectedText);
                 ws.send(JSON.stringify({ type: 'init', userConfig: myConfig }));
             };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                
-                if (data.type === 'error') {
-                    appendError(data.text);
-                } else if (data.type === 'chat') {
-                    appendChat(data);
-                } else if (data.type === 'shoutout_alert') {
-                    showShoutOutToast(data.from, data.text);
+                if (data.type === 'error') appendError(data.text);
+                else if (data.type === 'chat') appendChat(data);
+                else if (data.type === 'shoutout_alert') showShoutOutToast(data.from, data.text);
+                else if (data.type === 'system') {
+                    appendSystem(data.text);
+                    playTelegraphBeep(100); // 切换房间提示音
                 }
             };
+        }
+
+        // ================= 🔊 电报机音效生成器 =================
+        function playTelegraphBeep(duration = 50) {
+            if (currentRoom !== 'telegraph') return;
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, ctx.currentTime); // 800Hz 滴声
+                
+                gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration / 1000);
+
+                osc.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                
+                osc.start();
+                osc.stop(ctx.currentTime + duration / 1000);
+            } catch (e) {}
+        }
+
+        // ================= ⌨️ 打字机效果 =================
+        function typeWriterEffect(element, text, speed = 30) {
+            element.textContent = '';
+            let i = 0;
+            function type() {
+                if (i < text.length) {
+                    element.textContent += text.charAt(i);
+                    // 每写几个字播放一次极短的滴声
+                    if (i % 3 === 0) playTelegraphBeep(20); 
+                    i++;
+                    setTimeout(type, speed);
+                }
+            }
+            type();
         }
 
         function appendChat(data) {
@@ -413,11 +441,21 @@
                             <span class="lang">${langDisplay}</span>
                         </div>
                         ${codeHtml}
-                        <div class="chat-output" style="${outputStyle}">${highlightedText}</div>
+                        <div class="chat-output" style="${outputStyle}" id="msg-${Date.now()}"></div>
                     </div>
                 </div>
             `;
             document.getElementById('chat-history').appendChild(block);
+            
+            const outputDiv = block.querySelector('.chat-output');
+            // 如果是电报房间，且不是系统消息，启用打字机+音效
+            if (currentRoom === 'telegraph' && !isSystem && !isFlipper) {
+                playTelegraphBeep(150); // 收到消息的长滴声
+                typeWriterEffect(outputDiv, highlightedText, 50);
+            } else {
+                outputDiv.innerHTML = highlightedText;
+            }
+
             document.getElementById('chat-history').scrollTop = document.getElementById('chat-history').scrollHeight;
         }
 
@@ -446,11 +484,8 @@
         }
 
         const creditsModal = document.getElementById('credits-modal');
-        const openCreditsBtn = document.getElementById('open-credits-btn');
-        const closeCreditsBtn = document.getElementById('close-credits-btn');
-
-        openCreditsBtn.addEventListener('click', () => { creditsModal.classList.add('active'); });
-        closeCreditsBtn.addEventListener('click', () => { creditsModal.classList.remove('active'); });
+        document.getElementById('open-credits-btn').addEventListener('click', () => { creditsModal.classList.add('active'); });
+        document.getElementById('close-credits-btn').addEventListener('click', () => { creditsModal.classList.remove('active'); });
         creditsModal.addEventListener('click', (e) => { if (e.target === creditsModal) creditsModal.classList.remove('active'); });
 
         function getTime() { return new Date().toTimeString().split(' ')[0]; }
@@ -479,6 +514,23 @@
             if (e.key === 'Enter') {
                 const text = document.getElementById('message-input').value;
                 if (!text.trim() || ws.readyState !== WebSocket.OPEN) return;
+
+                // 🌟 电报机房间切换逻辑
+                if (text.includes('/telegraph')) {
+                    if (currentRoom === 'main') {
+                        currentRoom = 'telegraph';
+                        document.body.classList.add('telegraph-mode');
+                        document.getElementById('ui-title').innerText = "CodeChat - EnyuTu's Repl [TELEGRAPH]";
+                        ws.send(JSON.stringify({ type: 'switch_room', room: 'telegraph' }));
+                    } else {
+                        currentRoom = 'main';
+                        document.body.classList.remove('telegraph-mode');
+                        document.getElementById('ui-title').innerText = "CodeChat - EnyuTu's Repl [MAIN]";
+                        ws.send(JSON.stringify({ type: 'switch_room', room: 'main' }));
+                    }
+                    document.getElementById('message-input').value = '';
+                    return;
+                }
 
                 ws.send(JSON.stringify({ 
                     type: 'code',
